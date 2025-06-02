@@ -24,11 +24,13 @@ def prepare_data_for_ml(df):
     df_ml = df.copy()
     
     # Convert categorical variables to numerical using Label Encoding
-    le = LabelEncoder()
+    le_dict = {}
     categorical_columns = ['Institute', 'Academic_Program_Name', 'Quota', 'Gender', 'Seat_Type']
     
     for col in categorical_columns:
+        le = LabelEncoder()
         df_ml[col] = le.fit_transform(df_ml[col])
+        le_dict[col] = le
     
     # Convert Closing_Rank to numeric
     df_ml['Closing_Rank'] = pd.to_numeric(df_ml['Closing_Rank'], errors='coerce')
@@ -36,7 +38,7 @@ def prepare_data_for_ml(df):
     # Drop rows with missing values
     df_ml = df_ml.dropna()
     
-    return df_ml
+    return df_ml, le_dict
 
 def train_model(df_ml):
     # Features for prediction
@@ -52,38 +54,25 @@ def train_model(df_ml):
     
     return model, X_test, y_test
 
-def predict_colleges(model, df, input_rank, selected_quota, selected_gender, selected_seat_type):
-    # Create a copy of the dataframe for predictions
+def predict_colleges(model, df, input_rank, selected_quota, selected_gender, selected_seat_type, le_dict):
     df_pred = df.copy()
-    
-    # Filter based on user selections
     if selected_quota != 'All':
         df_pred = df_pred[df_pred['Quota'] == selected_quota]
     if selected_gender != 'All':
         df_pred = df_pred[df_pred['Gender'] == selected_gender]
     if selected_seat_type != 'All':
         df_pred = df_pred[df_pred['Seat_Type'] == selected_seat_type]
-    
-    # Prepare features for prediction
-    le = LabelEncoder()
     categorical_columns = ['Institute', 'Academic_Program_Name', 'Quota', 'Gender', 'Seat_Type']
-    
     for col in categorical_columns:
-        df_pred[col] = le.fit_transform(df_pred[col])
-    
-    # Make predictions
+        df_pred[col] = le_dict[col].transform(df_pred[col])
     X_pred = df_pred[categorical_columns]
     predicted_ranks = model.predict(X_pred)
-    
-    # Add predictions to the dataframe
     df_pred['Predicted_Rank'] = predicted_ranks
-    
-    # Filter colleges where predicted rank is higher than input rank
     recommended_colleges = df_pred[df_pred['Predicted_Rank'] >= input_rank]
-    
-    # Sort by predicted rank and get top 10
     recommended_colleges = recommended_colleges.sort_values(by='Predicted_Rank').head(10)
-    
+    # Convert encoded columns back to original names
+    for col in categorical_columns:
+        recommended_colleges[col] = le_dict[col].inverse_transform(recommended_colleges[col])
     return recommended_colleges
 
 def main():
@@ -111,11 +100,11 @@ def main():
 
     if st.button("Find Colleges"):
         # Prepare data and train model
-        df_ml = prepare_data_for_ml(df)
+        df_ml, le_dict = prepare_data_for_ml(df)
         model, X_test, y_test = train_model(df_ml)
         
         # Get predictions
-        recommended_colleges = predict_colleges(model, df, input_rank, selected_quota, selected_gender, selected_seat_type)
+        recommended_colleges = predict_colleges(model, df, input_rank, selected_quota, selected_gender, selected_seat_type, le_dict)
 
         if not recommended_colleges.empty:
             st.success(f"Found {len(recommended_colleges)} colleges for rank {input_rank}")
